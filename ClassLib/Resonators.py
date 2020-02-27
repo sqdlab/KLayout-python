@@ -1,13 +1,15 @@
-import pya
+import klayout.db
 from math import sqrt, cos, sin, atan2, pi, copysign
-from pya import Point,DPoint,DSimplePolygon,SimplePolygon, DPolygon, Polygon,  Region
-from pya import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
+from klayout.db import Point,DPoint,DSimplePolygon,SimplePolygon, DPolygon, Polygon,  Region
+from klayout.db import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
 
 from importlib import reload
 
 from .BaseClasses import Complex_Base
 from .Coplanars import CPW_RL_Path, CPW
-from .Coplanars import Coil_type_1, CPW_arc # backward compatibility TODO: delete classes
+from .Coplanars import Coil_type_1, Coil_type_2, Coil_air_bridges, CPW_arc, CPW_arc_2 # backward compatibility TODO: delete classes
+from .Capacitors import Connector_large_capacitor
+
 
 class CPWResonator():
     
@@ -223,6 +225,40 @@ class EMResonator_TL2Qbit_worm( Complex_Base ):
         
         self.connections = [DPoint(0,0), self.cop_tail.end]
         self.angle_connections = [0,self.cop_tail.alpha_end]
+        
+class Air_bridges_TL2Qbit_worm( Complex_Base ):
+    def __init__( self, Z0, start, L_coupling, L1, r, L2, N, N_air_bridges, trans_in=None ):
+        self.Z0 = Z0
+        self.L_coupling = L_coupling
+        self.L1 = L1
+        self.r = r
+        self.L2 = L2
+
+        self.N = N
+        self.N_air_bridges = N_air_bridges
+        self.L0 = self.L1 / (self.N_air_bridges +1)
+        self.primitives_gnd = {}
+        
+        super().__init__( start, trans_in )
+
+        self.start = self.connections[0]
+        self.end = self.connections[-1]
+        self.dr = self.end - self.start
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+        
+    def init_primitives( self ):
+        name = "coil0"
+        setattr(self, name, Coil_air_bridges(self.Z0, DPoint(0,0), self.L_coupling, self.r, self.L1, self.N_air_bridges) )
+        self.primitives[name] = getattr( self, name )      
+        # coils filling        
+        for i in range(self.N):
+            name = "coil" + str(i+1)
+            setattr( self, name, Coil_air_bridges( self.Z0, DPoint( -self.L1 + self.L_coupling, -(i+1)*(4*self.r) ), self.L1, self.r, self.L1, self.N_air_bridges) )
+            self.primitives[name] = getattr( self, name )
+               
+        self.connections = [DPoint(0,0), self.primitives["coil" + str(self.N)].end]
+        self.angle_connections = [0,self.primitives["coil" + str(self.N)].alpha_end]
 
 class EMResonator_TL2Qbit_worm2( Complex_Base ):
     def __init__( self, Z0, start, L_coupling, L1, r, L2, N, trans_in=None ):
@@ -266,3 +302,233 @@ class EMResonator_TL2Qbit_worm2( Complex_Base ):
         
         self.connections = [DPoint(0,0), self.cop_tail.end]
         self.angle_connections = [0,self.cop_tail.alpha_end]
+
+
+
+class Resonator_Test( Complex_Base ):
+    def __init__( self, Z0, start, L_coupling, L1, r, L2, N, angle, trans_in=None ):
+        self.Z0 = Z0
+        self.L_coupling = L_coupling
+        self.L1 = L1
+        self.r = r
+        self.L2 = L2
+
+        self.N = N
+        self.primitives_gnd = {}
+        self.angle = angle
+        super().__init__( start, trans_in )
+
+        self.start = self.connections[0]
+        self.end = self.connections[-1]
+        self.dr = self.end - self.start
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+
+        
+    def init_primitives( self ):
+        name = "coil0"
+        setattr(self, name, Coil_type_1(self.Z0, DPoint(0,0), self.L_coupling, self.r, self.L1) )
+        self.primitives[name] = getattr( self, name )      
+        # coils filling        
+        for i in range(self.N):
+            name = "coil" + str(i+1)
+            setattr( self, name, Coil_type_1( self.Z0, DPoint( -self.L1 + self.L_coupling, -(i+1)*(4*self.r) ), self.L1, self.r, self.L1 ) )
+            self.primitives[name] = getattr( self, name )
+            
+        # draw the "tail"
+        self.arc_tail = CPW_arc( self.Z0, self.primitives["coil" + str(self.N)].end, -self.L1/8, self.angle )
+        self.cop_tail = CPW( self.Z0.width, self.Z0.gap, self.arc_tail.end, self.arc_tail.end - DPoint( 0,self.L2 ) )
+        self.cop_open_end = CPW( 0, self.Z0.b/2, self.cop_tail.end, self.cop_tail.end - DPoint(0,self.Z0.b) )
+        self.primitives["arc_tail"] = self.arc_tail
+        self.primitives["cop_tail"] = self.cop_tail
+        self.primitives["cop_open_end"] = self.cop_open_end
+        
+        self.connections = [DPoint(0,0), self.cop_tail.end]
+        self.angle_connections = [0,self.cop_tail.alpha_end]
+        
+class Three_Part_Resonator( Complex_Base ):
+    def __init__( self, Z0, start, L_tail, L_coupling, L1, r, L2, N, angle, trans_in=None ):
+        self.Z0 = Z0
+        self.L_coupling = L_coupling
+        self.L_tail = L_tail
+        self.L1 = L1
+        self.r = r
+        self.L2 = L2
+
+        self.N = N
+        self.primitives_gnd = {}
+        self.angle = angle
+        super().__init__( start, trans_in )
+
+        self.start = self.connections[0]
+        self.end = self.connections[-1]
+        self.dr = self.end - self.start
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+
+        
+    def init_primitives( self ):
+        name = "coil0"
+        setattr(self, name, Coil_type_1(self.Z0, DPoint(0,0), self.L_coupling, self.r, self.L1) )
+        self.primitives[name] = getattr( self, name )      
+        # coils filling        
+        for i in range(self.N):
+            name = "coil" + str(i+1)
+            setattr( self, name, Coil_type_1( self.Z0, DPoint( -self.L1 + self.L_coupling, -(i+1)*(4*self.r) ), self.L1, self.r, self.L1 ) )
+            self.primitives[name] = getattr( self, name )
+            
+        # draw the "tail"
+        self.arc_tail = CPW_arc( self.Z0, self.primitives["coil" + str(self.N)].end, -self.L1/8, self.angle )
+        self.cop_tail = CPW( self.Z0.width, self.Z0.gap, self.arc_tail.end, self.arc_tail.end - DPoint( 0,self.L2 ) )
+        self.cop_open_end = CPW( 0, self.Z0.b/2, self.cop_tail.end, self.cop_tail.end - DPoint(0,self.Z0.b) )
+        self.shorted_end_arc = CPW_arc(self.Z0, DPoint(0, 0), -self.r, pi/2)
+        self.shorted_end = CPW( self.Z0.width, self.Z0.gap, self.shorted_end_arc.end, self.shorted_end_arc.end + DPoint( 0, -self.L_tail ) )
+        self.primitives["arc_tail"] = self.arc_tail
+        self.primitives["cop_tail"] = self.cop_tail
+        self.primitives["cop_open_end"] = self.cop_open_end
+        self.primitives["shorted_end_arc"] = self.shorted_end_arc
+        self.primitives["shorted_end"] = self.shorted_end
+        
+        self.connections = [DPoint(0,0), self.cop_tail.end]
+        self.angle_connections = [0,self.cop_tail.alpha_end, self.shorted_end_arc.alpha_end]
+
+class EMResonator_worm( Complex_Base ):
+    def __init__( self, Z0, start, L_coupling, L1, r, L2, N, trans_in=None ):
+        self.Z0 = Z0
+        self.L_coupling = L_coupling
+        self.L1 = L1
+        self.r = r
+        self.L2 = L2
+
+        self.N = N
+        self.primitives_gnd = {}
+        super().__init__( start, trans_in )
+
+        self.start = self.connections[0]
+        self.end = self.connections[-1]
+        self.dr = self.end - self.start
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+        
+    def init_primitives( self ):
+        name = "coil0"
+        setattr(self, name, Coil_type_1(self.Z0, DPoint(0,0), self.L_coupling, self.r, self.L1) )
+        self.primitives[name] = getattr( self, name )      
+        # coils filling        
+        for i in range(self.N):
+            name = "coil" + str(i+1)
+            setattr( self, name, Coil_type_1( self.Z0, DPoint( -self.L1 + self.L_coupling, -(i+1)*(4*self.r) ), self.L1, self.r, self.L1 ) )
+            self.primitives[name] = getattr( self, name )
+            
+        # draw the "tail"
+        self.arc_tail = CPW_arc( self.Z0, self.primitives["coil" + str(self.N)].end, -self.L1/2, -pi/2 )
+        self.cop_tail = CPW( self.Z0.width, self.Z0.gap, self.arc_tail.end, self.arc_tail.end - DPoint( 0,self.L2 ) )
+        self.cop_open_end = CPW( 0, self.Z0.b/2, DPoint(0, 0), DPoint(0, 0) - DPoint(self.Z0.b, 0) )
+        self.primitives["arc_tail"] = self.arc_tail
+        self.primitives["cop_tail"] = self.cop_tail
+        self.primitives["cop_open_end"] = self.cop_open_end
+        
+        self.connections = [DPoint(0,0), self.cop_tail.end]
+        self.angle_connections = [0,self.cop_tail.alpha_end]
+        
+        
+class Purcell_filtered_resonator( Complex_Base ):
+    def __init__( self, Z0, start, L_sep, L_connector, L_qubit_coupling, Sep_connector, L_wigling, r, L2_r, L2_f, N_wigling, gap_2, spacing, d_1, d_2, N, trans_in = None ):
+        self.Z0 = Z0
+        # Width of the capacitor
+        self.d_1 = d_1
+        # Space between 2 pads of capacitor 
+        self.d_2 = d_2
+        # Number of connections between the 2 pads 
+        self.N = N
+        # Width of the line connecting the capacitor to circuit
+        self.width = self.Z0.width
+        # Gap near connecting wire
+        self.gap_1 = self.Z0.gap
+        # Gap around the capacitor 
+        self.gap_2 = gap_2 
+        # Spacint between lines of capacitor 
+        self.spacing = spacing
+        # Distance between transmission line and capacitor
+        self.L_sep = L_sep
+        # Lenght of the wigling, common to filter and readout cavity
+        self.L_wigling = L_wigling
+        # Aditional length after wigling to further tune resonator frequency
+        self.L2_r = L2_r
+        self.r = r
+        # Aditional length after wigling to further tune Purcell filter frequency
+        self.L2_f = L2_f
+        # Number of wigling,common to filter and readout cavity
+        self.N_wigling = N_wigling
+        # Distance between the readout cavity and the Purcell filter
+        self.L_connector = L_connector
+        # Separation between the 2 sides of the connection between Purcell filter and readout
+        self.Sep_connector = Sep_connector
+        # Extra length of the resonator to which we couple the qubit
+        self.L_qubit_coupling = L_qubit_coupling
+        
+
+        self.primitives_gnd = {}
+        super().__init__( start, trans_in )
+
+        self.start = self.connections[0]
+        self.end = self.connections[-1]
+        self.dr = self.end - self.start
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+        
+    def init_primitives( self ):
+        
+        self.capacitor = Connector_large_capacitor(DPoint(0,0), self. width, self.L_sep, self.gap_1, self.gap_2, self.spacing, self.d_1, self.d_2, self.N)
+        self.primitives["capacitor"] = self.capacitor
+             
+#Purcell filter cavity        
+        for i in range(self.N_wigling):
+            name = "coilf" + str(i+1)
+            setattr( self, name, Coil_type_2( self.Z0, self.capacitor.end + DPoint( (i)*(4*self.r), 0 ), self.L_wigling, self.r, self.L_wigling ) )
+            self.primitives[name] = getattr( self, name )
+            
+        
+        self.arcf = CPW_arc_2( self.Z0, self.primitives["coilf" + str(self.N_wigling)].end, -self.L_wigling - self.r, pi/2, 0 )
+        self.primitives["arcf"] = self.arcf
+        
+        self.lengthf = CPW(self.Z0.width, self.Z0.gap, self.arcf.end, self.arcf.end + DPoint(self.L2_f, 0))
+        self.primitives["lengthf"] = self.lengthf
+        
+# Now we create the connection between the Purcell-filter cavity and the resonator 
+        
+        self.L_connect_pad = (self.L_connector - self.Sep_connector)/2 + self.Z0.gap
+        
+        self.connector1 = CPW(self.Z0.width, self.Z0.gap, self.arcf.end + DPoint(self.Z0.width/2, -self.Z0.width/2), self.arcf.end + DPoint(self.Z0.width/2, -self.Z0.width/2) + DPoint(0, -self.L_connect_pad))
+        self.primitives["connector1"] = self.connector1
+        
+        
+# Resonator cavity to which we couple the qubit for measurement 
+        
+        self.p0 = self.capacitor.end - DPoint(0, 2*self.r + self.Z0.width + 2*self.Z0.gap +2*self.L_wigling + self.L_connector)
+        
+        for i in range(self.N_wigling):
+            name = "coilr" + str(i+1)
+            setattr( self, name, Coil_type_2( self.Z0, self.p0 + DPoint( (i)*(4*self.r), 0 ), self.L_wigling, self.r, self.L_wigling, initial_direction = "up" ) )
+            self.primitives[name] = getattr( self, name )
+        
+        self.arcr = CPW_arc_2( self.Z0, self.primitives["coilr" + str(self.N_wigling)].end, -self.L_wigling - self.r, -pi/2, 0 )
+        self.primitives["arcr"] = self.arcr
+        
+        self.lengthr = CPW(self.Z0.width, self.Z0.gap, self.arcr.end, self.arcr.end + DPoint(self.L2_r, 0))
+        self.primitives["lengthr"] = self.lengthr
+        
+        self.connector2 = CPW(self.Z0.width, self.Z0.gap, self.arcr.end + DPoint(self.Z0.width/2, self.Z0.width/2), self.arcr.end + DPoint(self.Z0.width/2, self.Z0.width/2) + DPoint(0, self.L_connect_pad))
+        self.primitives["connector2"] = self.connector2
+        
+        self.void = CPW(0, self.Z0.gap + self.Z0.width/2, self.connector1.end, self.connector2.end)
+        self.primitives["void"] = self.void
+        
+        self.QbCPW = CPW(self.Z0.width, self.Z0.gap, self.primitives["coilr" + str(1)].start, self.primitives["coilr" + str(1)].start - DPoint(0, self.L_qubit_coupling))
+        self.primitives["QbCPW"] = self.QbCPW
+        
+        self.cop_open_end = CPW( 0, self.Z0.b/2, self.QbCPW.end, self.QbCPW.end - DPoint(0,self.Z0.b) )
+        self.primitives["cop_open_end"] = self.cop_open_end        
+        
+        self.connections = [DPoint(0,0), self.QbCPW.end]
+        self.angle_connections = [0,self.QbCPW.alpha_end]

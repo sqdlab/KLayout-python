@@ -1,7 +1,10 @@
-import pya
+import klayout.db
 from math import sqrt, cos, sin, tan, atan2, pi, copysign
-from pya import Point, DPoint, Vector, DVector, DSimplePolygon, SimplePolygon, DPolygon, Polygon, Region
-from pya import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
+from klayout.db import Point, DPoint, Vector, DVector, DSimplePolygon, SimplePolygon, DPolygon, Polygon, Region
+from klayout.db import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
+
+from .Coplanars import CPW_RL_Path, CPW
+from .Coplanars import Coil_type_1, Coil_air_bridges, CPW_arc, CPW2CPW
 
 from ClassLib.Coplanars import *
 from ClassLib.Shapes import *
@@ -168,3 +171,228 @@ class CWave( Complex_Base ):
         # prev_path = list(self.primitives.values())[-1]
         # rl_path_end = CPW_RL_Path( prev_path.end, "RLRL", Z, self.r_curve, [self.L0, self.delta], [m_x*self.alpha,-m_x*self.alpha])
         self.primitives["cut"] = cut
+
+        
+# Large capacitor mod class
+# I (Marcus) think I found a small bug in the large cap class,
+# I corrected it below (where noted).
+class Large_capacitor_mod( Element_Base ):
+    def __init__( self, origin, d_1, d_2, N, gap_2, spacing, trans_in = None ):
+        
+        # origin corresponds to the middle of the bottom pad
+        self.origin = origin
+        # Width of the capacitor
+        self.d_1 = d_1
+        # Space between 2 pads of capacitor 
+        self.d_2 = d_2
+        # Number of connections between the 2 pads 
+        self.N = N 
+        self.gap_2 = gap_2
+        self.spacing = spacing
+        
+        super().__init__(self.origin, trans_in)
+    
+    def init_regions( self ):
+        
+         
+        self.d = (self.N -1)*(2*self.spacing + 2*self.d_1) + self.d_1
+        
+        self.p0 = DPoint(-self.d/2,0)
+        self.p1 = DPoint(self.d/2, 5e3)
+        self.metal0 = klayout.db.DBox( self.p0, self.p1)
+        self.metal_region.insert( klayout.db.Box().from_dbox(self.metal0) )
+        
+        for i in range(self.N-1):
+            self.p2 = DPoint(i*(2*self.d_1+2*self.spacing) -self.d/2, 5e3)
+            self.p3 = DPoint(i*(2*self.d_1+2*self.spacing) + self.d_1 -self.d/2, 5e3+self.d_2)
+            self.metal1 = klayout.db.DBox( self.p2, self.p3)
+            self.metal_region.insert( klayout.db.Box().from_dbox(self.metal1) ) 
+            
+            self.p4 = DPoint(i*(2*self.d_1+2*self.spacing) + self.d_1 + self.spacing -self.d/2, 6e3)
+            self.p5 = DPoint(i*(2*self.d_1+2*self.spacing) + 2*self.d_1 +self.spacing -self.d/2, 5e3+self.d_2+1e3)
+            self.metal2 = klayout.db.DBox( self.p4, self.p5)
+            self.metal_region.insert( klayout.db.Box().from_dbox(self.metal2) )
+            
+            self.empty0 = klayout.db.DBox( self.p3, self.p3 + DPoint(-self.d_1, 1e3))
+            self.empty1 = klayout.db.DBox( self.p3 + DPoint(0,1e3), self.p4 + DPoint(0, -1e3))
+            self.empty2 = klayout.db.DBox( self.p4 + DPoint(0,-1e3), self.p4 + DPoint(self.d_1, 0))
+            self.empty3 = klayout.db.DBox( self.p4 + DPoint(self.d_1,-1e3), self.p5 + DPoint(self.spacing, 0))
+            self.empty_region.insert( klayout.db.Box().from_dbox(self.empty0) )
+            self.empty_region.insert( klayout.db.Box().from_dbox(self.empty1) )
+            self.empty_region.insert( klayout.db.Box().from_dbox(self.empty2) )
+            self.empty_region.insert( klayout.db.Box().from_dbox(self.empty3) )
+            
+        # Last Finger 
+        #---- Below Modified -----#
+        self.p2 = DPoint((self.N-1)*(2*self.d_1+2*self.spacing) -self.d/2, 5e3)
+        self.p3 = DPoint((self.N-1)*(2*self.d_1+2*self.spacing) -self.d/2 + self.d_1, 5e3+self.d_2)
+        #-----Above Modified------#
+        self.metal3 = klayout.db.DBox( self.p3, self.p2)
+        self.metal_region.insert( klayout.db.Box().from_dbox(self.metal3) )
+        
+        #Top Pad:
+        self.p6 = DPoint(-self.d/2, self.d_2 + 1e3 + 5e3)
+        self.p7 =DPoint(self.d/2, self.d_2 + 1e3 + 10e3)
+        self.metal3 = klayout.db.DBox( self.p6, self.p7)
+        self.metal_region.insert( klayout.db.Box().from_dbox(self.metal3) )
+      
+      # No need for empty regions, when inserting capacitors in empty regions:
+        self.p8 = DPoint(-self.d/2-self.gap_2,0)
+        self.p9 = DPoint(-self.d/2, self.d_2 + 1e3 + 10e3)
+        self.empty4 = klayout.db.DBox( self.p8, self.p9)
+        self.empty_region.insert( klayout.db.Box().from_dbox(self.empty4) )
+        
+        self.p10 = DPoint(self.d/2+self.gap_2,0)
+        self.p11= DPoint(self.d/2, self.d_2 + 1e3 + 10e3)
+        self.empty5 = klayout.db.DBox( self.p10, self.p11)
+        self.empty_region.insert( klayout.db.Box().from_dbox(self.empty5) )
+       
+        # gap at top of last finger:
+        self.p12 = DPoint(self.d/2-self.d_1, self.d_2 + 5e3)
+        self.p13 = DPoint(self.d/2, self.d_2 + 6e3)
+        self.empty6 = klayout.db.DBox(self.p12, self.p13 )
+        self.empty_region.insert( klayout.db.Box().from_dbox(self.empty6) ) 
+        
+
+class Large_capacitor( Element_Base ):
+    def __init__( self, origin, d_1, d_2, N, gap_2, spacing, trans_in = None ):
+        
+        # origin corresponds to the middle of the bottom pad
+        self.origin = origin
+        # Width of the capacitor
+        self.d_1 = d_1
+        # Space between 2 pads of capacitor 
+        self.d_2 = d_2
+        # Number of connections between the 2 pads 
+        self.N = N
+        self.gap_2 = gap_2
+        self.spacing = spacing
+        
+        super().__init__(self.origin, trans_in)
+    
+    def init_regions( self ):
+        
+         
+        self.d = (self.N -1)*(2*self.spacing + 2*self.d_1) + self.d_1
+        
+        self.p0 = DPoint(-self.d/2,0)
+        self.p1 = DPoint(self.d/2, 5e3)
+        self.metal0 = klayout.db.DBox( self.p0, self.p1)
+        self.metal_region.insert( klayout.db.Box().from_dbox(self.metal0) )
+        
+        for i in range(self.N-1):
+            self.p2 = DPoint(i*(2*self.d_1+2*self.spacing) -self.d/2, 5e3)
+            self.p3 = DPoint(i*(2*self.d_1+2*self.spacing) + self.d_1 -self.d/2, 5e3+self.d_2)
+            self.metal1 = klayout.db.DBox( self.p2, self.p3)
+            self.metal_region.insert( klayout.db.Box().from_dbox(self.metal1) ) 
+            
+            self.p4 = DPoint(i*(2*self.d_1+2*self.spacing) + self.d_1 + self.spacing -self.d/2, 6e3)
+            self.p5 = DPoint(i*(2*self.d_1+2*self.spacing) + 2*self.d_1 +self.spacing -self.d/2, 5e3+self.d_2+1e3)
+            self.metal2 = klayout.db.DBox( self.p4, self.p5)
+            self.metal_region.insert( klayout.db.Box().from_dbox(self.metal2) )
+            
+            self.empty0 = klayout.db.DBox( self.p3, self.p3 + DPoint(-self.d_1, 1e3))
+            self.empty1 = klayout.db.DBox( self.p3 + DPoint(0,1e3), self.p4 + DPoint(0, -1e3))
+            self.empty2 = klayout.db.DBox( self.p4 + DPoint(0,-1e3), self.p4 + DPoint(self.d_1, 0))
+            self.empty3 = klayout.db.DBox( self.p4 + DPoint(self.d_1,-1e3), self.p5 + DPoint(self.spacing, 0))
+            self.empty_region.insert( klayout.db.Box().from_dbox(self.empty0) )
+            self.empty_region.insert( klayout.db.Box().from_dbox(self.empty1) )
+            self.empty_region.insert( klayout.db.Box().from_dbox(self.empty2) )
+            self.empty_region.insert( klayout.db.Box().from_dbox(self.empty3) )
+            
+         #-----------------------------------#
+        # Comment from Marcus: I think there's a little bug in the following two lines
+        # Copy corresponding code from Large_capacitor_mod to fix
+        self.p2 = DPoint((self.N-1)*(2*self.d_1+self.spacing)-self.d/2, 5e3)
+        self.p3 = DPoint((self.N-1)*(2*self.d_1+self.spacing) + self.d_1-self.d/2, 5e3+self.d_2)
+        #-----------------------------------#
+        self.metal1 = klayout.db.DBox( self.p2, self.p3)
+        self.metal_region.insert( klayout.db.Box().from_dbox(self.metal1) )
+      
+        self.p6 = DPoint(-self.d/2, self.d_2 + 1e3 + 5e3)
+        self.p7 =DPoint(self.d/2, self.d_2 + 1e3 + 10e3)
+        self.metal3 = klayout.db.DBox( self.p6, self.p7)
+        self.metal_region.insert( klayout.db.Box().from_dbox(self.metal3) )
+        
+        self.p8 = DPoint(-self.d/2-self.gap_2,0)
+        self.p9 = DPoint(-self.d/2, self.d_2 + 1e3 + 10e3)
+        self.empty4 = klayout.db.DBox( self.p8, self.p9)
+        self.empty_region.insert( klayout.db.Box().from_dbox(self.empty4) )
+        
+        self.p10 = DPoint(self.d/2+self.gap_2,0)
+        self.p11= DPoint(self.d/2, self.d_2 + 1e3 + 10e3)
+        self.empty5 = klayout.db.DBox( self.p10, self.p11)
+        self.empty_region.insert( klayout.db.Box().from_dbox(self.empty5) )
+        
+        self.p12 = DPoint(self.d/2-self.d_1, self.d_2 + 5e3)
+        self.p13 = DPoint(self.d/2, self.d_2 + 6e3)
+        self.empty6 = klayout.db.DBox(self.p12, self.p13 )
+        self.empty_region.insert( klayout.db.Box().from_dbox(self.empty6) )
+        
+        
+class Connector_large_capacitor( Complex_Base ):
+    def __init__( self, origin, width, L_sep, gap_1, gap_2, spacing, d_1, d_2, N, trans_in = None ):
+        # origin corresponds to the middle of the bottom pad
+        self.origin = origin
+        # Width of the capacitor
+        self.d_1 = d_1
+        # Space between 2 pads of capacitor 
+        self.d_2 = d_2
+        # Number of connections between the 2 pads 
+        self.N = N
+        # Width of the line connecting the capacitor to circuit
+        self.width = width
+        # Gap near connecting wire
+        self.gap_1 = gap_1
+        # Gap around the capacitor 
+        self.gap_2 = gap_2 
+        # Spacint between lines of capacitor 
+        self.spacing = spacing
+        # Distance between transmission line and capacitor
+        self.L_sep = L_sep
+        self.d = (self.N -1)*(2*self.spacing + 2*self.d_1) + self.d_1
+
+        super().__init__( origin, trans_in )
+
+        self.start = self.connections[0]
+        self.end = self.connections[-1]
+        self.dr = self.end - self.start
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+        
+    def init_primitives( self ):      
+        
+        self.p0 = DPoint(0,0)
+        self.p1 = self.p0 + DPoint(0, 100e3)
+        self.p2 = self.p1 + DPoint(0, 20e3)
+        self.p3 = self.p2 + DPoint(0, 2e3)
+        self.p4 = self.p3 + DPoint(0, self.d_2 + 1e3 + 10e3)
+        self.p5 = self.p4 + DPoint(0, 2e3)
+        self.p6 = self.p5 + DPoint(0, 20e3)
+        self.p7 = self.p6 + DPoint(0, self.L_sep)
+        
+        
+        
+        self.transmission_connection_1 = CPW( self.width, self.gap_1, self.p0, self.p1)
+        self.primitives["transmission_connection_1"] = self.transmission_connection_1
+        
+        self.capa_connex_1 = CPW( self.d, self.gap_2, self.p2, self.p3)
+        self.primitives["capa_connex_1"] = self.capa_connex_1
+        
+        self.joint_1 = CPW2CPW( self.transmission_connection_1, self.capa_connex_1, self.transmission_connection_1.end, self.capa_connex_1.start)
+        self.primitives["joint_1"] = self.joint_1
+        
+        self.capa = Large_capacitor(self.p3, self.d_1, self.d_2, self.N, self.gap_2, self.spacing)
+        self.primitives["capa"] = self.capa
+        
+        self.capa_connex_2 = CPW( self.d, self.gap_2, self.p4, self.p5)
+        self.primitives["capa_connex_2"] = self.capa_connex_2
+        
+        self.transmission_connection_2 = CPW( self.width, self.gap_1, self.p6, self.p7)
+        self.primitives["transmission_connection_2"] = self.transmission_connection_2
+        
+        self.joint_2 = CPW2CPW(self.capa_connex_2, self.transmission_connection_2, self.capa_connex_2.end, self.transmission_connection_2.start)
+        self.primitives["joint_2"] = self.joint_2
+        
+        self.connections = [self.p7, self.p0]
+        self.angle_connections = [0,self.transmission_connection_2.alpha_end] 

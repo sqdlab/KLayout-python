@@ -1,7 +1,7 @@
-import pya
+import klayout.db
 from math import pi
-from pya import DPoint,DSimplePolygon,SimplePolygon
-from pya import Trans,DTrans,DVector,DPath
+from klayout.db import DPoint,DSimplePolygon,SimplePolygon
+from klayout.db import Trans,DTrans,DVector,DPath
 
 from ClassLib.BaseClasses import Element_Base, Complex_Base
 from ClassLib.Shapes import Circle, Kolbaska

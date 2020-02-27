@@ -1,7 +1,7 @@
-import pya
+import klayout.db
 from math import sqrt, cos, sin, atan2, pi, copysign
-from pya import Point,DPoint,DSimplePolygon,SimplePolygon, DPolygon, Polygon,  Region
-from pya import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
+from klayout.db import Point,DPoint,DSimplePolygon,SimplePolygon, DPolygon, Polygon,  Region
+from klayout.db import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
 
 from ClassLib._PROG_SETTINGS import *
 
@@ -144,7 +144,7 @@ class Element_Base():
                     
         if( layer_i != -1 ): 
             r_cell = Region( dest.begin_shapes_rec( layer_i ) )        
-            temp_i = dest.layout().layer( pya.LayerInfo(PROGRAM.LAYER1_NUM,0) )
+            temp_i = dest.layout().layer( klayout.db.LayerInfo(PROGRAM.LAYER1_NUM,0) )
             r_cell += metal_region
             r_cell -= empty_region
             
@@ -216,7 +216,7 @@ class Complex_Base( Element_Base ):
             for primitive in self.primitives.values():
                 primitive.place( r_cell, region_name=region_name )
             
-            temp_i = dest.layout().layer( pya.LayerInfo(PROGRAM.LAYER1_NUM,0) ) 
+            temp_i = dest.layout().layer( klayout.db.LayerInfo(PROGRAM.LAYER1_NUM,0) ) 
             dest.shapes( temp_i ).insert( r_cell )
             dest.layout().clear_layer( layer_i )
             dest.layout().move_layer( temp_i, layer_i )

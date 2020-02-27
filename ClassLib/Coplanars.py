@@ -1,7 +1,7 @@
-import pya
+import klayout.db
 from math import sqrt, cos, sin, atan2, pi, copysign, tan
-from pya import Point,DPoint,DSimplePolygon,SimplePolygon, DPolygon, Polygon,  Region
-from pya import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
+from klayout.db import Point,DPoint,DSimplePolygon,SimplePolygon, DPolygon, Polygon,  Region
+from klayout.db import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
 
 from ClassLib.BaseClasses import *
 
@@ -53,12 +53,63 @@ class CPW( Element_Base ):
                                                        DPoint(self.dr.abs(),self.width/2),
                                                        DPoint(0,self.width/2)] )
         self.connection_edges = [3,1]
-        self.metal_region.insert( pya.SimplePolygon().from_dpoly( metal_poly ) )
+        self.metal_region.insert( klayout.db.SimplePolygon().from_dpoly( metal_poly ) )
         if( self.gap != 0 ):
-            self.empty_region.insert( pya.Box( Point().from_dpoint(DPoint(0,self.width/2)), Point().from_dpoint(DPoint( self.dr.abs(), self.width/2 + self.gap )) ) )
-            self.empty_region.insert( pya.Box( Point().from_dpoint(DPoint(0,-self.width/2-self.gap)), Point().from_dpoint(DPoint( self.dr.abs(), -self.width/2 )) ) )
+            self.empty_region.insert( klayout.db.Box( Point().from_dpoint(DPoint(0,self.width/2)), Point().from_dpoint(DPoint( self.dr.abs(), self.width/2 + self.gap )) ) )
+            self.empty_region.insert( klayout.db.Box( Point().from_dpoint(DPoint(0,-self.width/2-self.gap)), Point().from_dpoint(DPoint( self.dr.abs(), -self.width/2 )) ) )
         self.metal_region.transform( alpha_trans )
         self.empty_region.transform( alpha_trans )
+        
+        
+class Air_bridges( Element_Base ):
+    """@brief: class represents single coplanar waveguide
+        @params:  float width - represents width of the central conductor
+                        float gap - spacing between central conductor and ground planes
+                        float gndWidth - width of ground plane to be drawed 
+                        DPoint start - center aligned point, determines the start point of the coplanar segment
+                        DPoint end - center aligned point, determines the end point of the coplanar segment
+    """
+    def __init__(self,  N_air_bridges, width=None, gap=None, start=DPoint(0,0), end=DPoint(0,0), gndWidth=-1, trans_in=None, cpw_params=None ):
+        if( cpw_params  is None ):
+            self.width = width
+            self.gap = gap
+            self.b = 2*gap + width
+        else:
+            self.width = cpw_params.width
+            self.gap = cpw_params.gap
+            self.b = 2*self.gap + self.width
+            
+        self.gndWidth = gndWidth
+        self.N_air_bridges = N_air_bridges
+        self.end = end
+        self.start = start
+        self.dr = end - start
+        super().__init__( start, trans_in )
+        self.start = self.connections[0]
+        self.end = self.connections[1]
+        self.dr = self.end - self.start
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+        
+    def init_regions( self ):
+        self.connections = [DPoint(0,0),self.dr]
+        self.start = DPoint(0,0)
+        self.end = self.start + self.dr
+        self.L0 = self.start.distance(self.end) / (self.N_air_bridges +1)
+        alpha = atan2( self.dr.y, self.dr.x )
+        self.angle_connections = [alpha,alpha]
+        alpha_trans = ICplxTrans().from_dtrans( DCplxTrans( 1,alpha*180/pi,False, self.start ) )
+        for i in range(self.N_air_bridges):
+            self.air_bridge = klayout.db.DBox( DPoint((i+1)*self.L0, -self.b/2 - 2e3), DPoint((i+1)*self.L0+2e3, self.b/2 + 2e3) ) 
+            self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge ) )
+            
+            self.air_bridge_2 = klayout.db.DBox( DPoint((i+1)*self.L0-self.b/4+1e3, -self.b/2 - 2e3), DPoint((i+1)*self.L0+1e3+self.b/4, -self.b/2 - 4e3) ) 
+            self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_2 ) )
+            
+            self.air_bridge_3 = klayout.db.DBox( DPoint((i+1)*self.L0-self.b/4+1e3, self.b/2 + 2e3), DPoint((i+1)*self.L0+1e3+self.b/4, self.b/2 + 4e3) ) 
+            self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_3 ) )
+       
+        self.metal_region.transform( alpha_trans )
 
 
 class CPW_arc( Element_Base ):
@@ -136,6 +187,158 @@ class CPW_arc( Element_Base ):
         self.metal_region.insert(SimplePolygon().from_dpoly(metal_arc))
         self.empty_region.insert(SimplePolygon().from_dpoly(empty_arc1))
         self.empty_region.insert(SimplePolygon().from_dpoly(empty_arc2))
+        
+        
+class CPW_arc_2( Element_Base ):
+# Just a small change compared to CPW_arc, now alpha-start is an input parameter so that 
+# we can start with a non-horizontal segment 
+    def __init__(self, Z0, start, R, delta_alpha, alpha_start, gndWidth = -1, trans_in=None ):
+        self.R = R
+        self.start = start
+        self.delta_alpha = delta_alpha
+        self.alpha_start = alpha_start
+        self.alpha_end = self.delta_alpha + self.alpha_start
+        
+        
+        self.center = self.start - self.R * DPoint( cos(self.alpha_start), sin(self.alpha_start) )
+        self.end = self.center + DPoint( cos(self.alpha_end), sin(self.alpha_end) )*self.R
+        self.dr = self.end - self.start
+        
+        self.width = Z0.width
+        self.gap = Z0.gap
+
+        super().__init__( start, trans_in )
+        self.start = self.connections[0]
+        self.end = self.connections[1]
+        self.center = self.connections[2]
+        
+        #print("End coords:", self.dr, self.end)
+        
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+
+    def _get_solid_arc( self, center, R, width, alpha_start, alpha_end, n_inner, n_outer ):
+        pts = []
+#        print(alpha_start/pi, alpha_end/pi, cos( alpha_start ), cos( alpha_end ),
+#                         sin(alpha_start), sin(alpha_end))
+                         
+        if alpha_end > alpha_start:
+            alpha_start = alpha_start - 1e-3 
+            alpha_end = alpha_end + 1e-3
+        else:
+            alpha_start = alpha_start + 1e-3
+            alpha_end = alpha_end - 1e-3
+        
+        d_alpha_inner = (alpha_end - alpha_start)/(n_inner - 1)
+        d_alpha_outer = -d_alpha_inner
+        
+        
+#        print("Center:", center)
+        
+        for i in range(0, n_inner):
+            alpha = alpha_start + d_alpha_inner*i
+            pts.append(center + DPoint(cos(alpha), sin(alpha))*(R - width/2))
+        for i in range(0, n_outer):
+            alpha = alpha_end + d_alpha_outer*i
+            pts.append(center + DPoint(cos(alpha), sin(alpha))*(R + width/2))
+#        print("Points:", pts[:n_inner],"\n       ", pts[n_inner:], "\n")
+        return DSimplePolygon(pts)
+        
+    def init_regions(self):
+        self.connections = [DPoint(0, 0), self.dr,- self.R * DPoint( cos(self.alpha_start), sin(self.alpha_start) ) ]
+        self.angle_connections = [self.alpha_start, self.alpha_end]
+        self.start = DPoint(0, 0)
+        self.end = self.dr
+        self.center =  self.start - self.R * DPoint( cos(self.alpha_start), sin(self.alpha_start) )
+        
+        n_inner = 200
+        n_outer = 200
+        
+        metal_arc = self._get_solid_arc(self.center, self.R, self.width, 
+                    self.alpha_start , self.alpha_end , n_inner, n_outer)  
+        self.connection_edges = [n_inner+n_outer,n_inner]
+        
+        empty_arc1 = self._get_solid_arc(self.center, self.R - (self.width + self.gap)/2, 
+                    self.gap, self.alpha_start, self.alpha_end, n_inner, n_outer)  
+        
+        empty_arc2 = self._get_solid_arc(self.center, self.R + (self.width + self.gap)/2, 
+                    self.gap, self.alpha_start, self.alpha_end, n_inner, n_outer)  
+        
+        self.metal_region.insert(SimplePolygon().from_dpoly(metal_arc))
+        self.empty_region.insert(SimplePolygon().from_dpoly(empty_arc1))
+        self.empty_region.insert(SimplePolygon().from_dpoly(empty_arc2))
+        
+        
+class Air_bridges_arc( Element_Base ):
+    def __init__(self, Z0, start, R, delta_alpha, gndWidth = -1, trans_in=None ):
+        self.R = R
+        self.start = start
+        self.center = start + DPoint( 0,self.R )
+        self.end = self.center + DPoint( sin(delta_alpha), -cos(delta_alpha) )*self.R
+        self.dr = self.end - self.start
+        
+        self.width = Z0.width
+        self.gap = Z0.gap
+        self.b = 2*self.gap + self.width
+        
+        self.delta_alpha = delta_alpha
+        self.alpha_start = 0
+        self.alpha_end = self.delta_alpha
+
+        super().__init__( start, trans_in )
+        self.start = self.connections[0]
+        self.end = self.connections[1]
+        self.center = self.connections[2]
+        
+        #print("End coords:", self.dr, self.end)
+        
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+
+        
+    def init_regions(self):
+        self.connections = [DPoint(0, 0), self.dr, DPoint(0, self.R)]
+        self.angle_connections = [self.alpha_start, self.alpha_end]
+        self.start = DPoint(0, 0)
+        self.end = self.dr
+        self.center = DPoint(0, self.R)
+        
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+        
+        Delta=[0,0,0]
+        Vec=[0,0,0]
+        VecOrt=[0,0,0]
+        for i, alpha in enumerate([self.alpha_start-pi/2, self.alpha_start+self.delta_alpha/2-pi/2, self.alpha_end-pi/2]):
+            Delta[i]= (self.b/2 + 2e3)*DPoint(cos(alpha), sin(alpha)) + 1e3* DPoint(-sin(alpha), cos(alpha))
+            Vec[i]= DPoint(cos(alpha), sin(alpha))
+            VecOrt[i] = DPoint(-sin(alpha), cos(alpha))
+            
+        self.air_bridge_10 = klayout.db.DBox(self.start + Delta[0], self.start - Delta[0]) 
+        self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_10 ) )
+        self.air_bridge_11 = klayout.db.DBox(self.start + Delta[0] + (self.b/4-1e3)*VecOrt[0], self.start + Delta[0] + (-self.b/4-1e3)*VecOrt[0]+ 2e3*Vec[0])  
+        self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_11 )) 
+        self.air_bridge_12 = klayout.db.DBox(self.start - Delta[0] - (self.b/4-1e3)*VecOrt[0], self.start - Delta[0] + (self.b/4+1e3)*VecOrt[0]- 2e3*Vec[0])  
+        self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_12 ) )
+        
+        self.medium = self.center + DPoint( sin(self.delta_alpha/2), -cos(self.delta_alpha/2) )*self.R
+       
+        self.air_bridge_20 = klayout.db.DBox(self.medium + Delta[1], self.medium -Delta[1] ) 
+        self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_20 ) )
+        self.air_bridge_21 = klayout.db.DBox(self.medium + Delta[1] + (self.b/4-1e3)*VecOrt[1], self.medium + Delta[1] + (-self.b/4-1e3)*VecOrt[1]+ 2e3*Vec[1])  
+        self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_21 )) 
+        self.air_bridge_22 = klayout.db.DBox(self.medium - Delta[1] - (self.b/4-1e3)*VecOrt[1], self.medium - Delta[1] + (self.b/4+1e3)*VecOrt[1]- 2e3*Vec[1])  
+        self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_22 ) )
+        
+        self.air_bridge_30 = klayout.db.DBox(self.end + Delta[2], self.end - Delta[2] ) 
+        self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_30 ) )
+        self.air_bridge_31 = klayout.db.DBox(self.end + Delta[2] + (self.b/4-1e3)*VecOrt[2], self.end + Delta[2] + (-self.b/4-1e3)*VecOrt[2]+ 2e3*Vec[2])  
+        self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_31 )) 
+        self.air_bridge_32 = klayout.db.DBox(self.end - Delta[2] - (self.b/4-1e3)*VecOrt[2], self.end - Delta[2] + (self.b/4+1e3)*VecOrt[2]- 2e3*Vec[2])  
+        self.metal_region.insert( klayout.db.Box().from_dbox( self.air_bridge_32 ) )
+        
+       
+        
         
         
 class CPW2CPW( Element_Base ):
@@ -231,6 +434,9 @@ class Path_RS(Complex_Base):
 
         
 class Coil_type_1( Complex_Base ):
+# On this version, the initial CPW section is horizontal, 
+# in order to have a horizontal initial CPW we create Coil_type_2
+    
     def __init__( self, Z0, start, L1, r, L2, trans_in=None ):
         self.Z0 = Z0
         self.L1 = L1
@@ -252,6 +458,98 @@ class Coil_type_1( Complex_Base ):
             self.connections = [self.cop1.start,self.arc2.end]
             self.angle_connections = [self.cop1.alpha_start,self.arc2.alpha_end]
             self.primitives = {"cop1":self.cop1,"arc1":self.arc1,"cop2":self.cop2,"arc2":self.arc2}
+            
+            
+class Coil_type_2( Complex_Base ):
+# On this version, the initial CPW section is vertical, 
+
+    
+    def __init__( self, Z0, start, L1, r, L2, initial_direction = "down", trans_in=None ):
+        self.Z0 = Z0
+        self.L1 = L1
+        self.r = r
+        self.L2 = L2
+        self.initial_direction = initial_direction
+        super().__init__( start, trans_in )
+        self.start = self.connections[0]
+        self.end = self.connections[-1]
+        self.dr = self.end - self.start
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+        
+        
+    def init_primitives( self ):
+        
+        if self.initial_direction == "down":   
+            self.cop1 = CPW( self.Z0.width, self.Z0.gap, DPoint(0,0), DPoint(0, -self.L1 ) )
+            self.arc1 = CPW_arc_2( self.Z0, self.cop1.end, -self.r, pi, 0 )
+            self.cop2 = CPW( self.Z0.width, self.Z0.gap, self.arc1.end, self.arc1.end + DPoint( 0, self.L2 ) )
+            self.arc2 = CPW_arc_2( self.Z0, self.cop2.end, -self.r, -pi, 0 )
+        
+        else:
+            self.cop1 = CPW( self.Z0.width, self.Z0.gap, DPoint(0,0), DPoint(0, +self.L1 ) )
+            self.arc1 = CPW_arc_2( self.Z0, self.cop1.end, -self.r, -pi, 0 )
+            self.cop2 = CPW( self.Z0.width, self.Z0.gap, self.arc1.end, self.arc1.end + DPoint( 0,- self.L2 ) )
+            self.arc2 = CPW_arc_2( self.Z0, self.cop2.end, -self.r, pi, 0 )
+            
+        self.connections = [self.cop1.start,self.arc2.end]
+        self.angle_connections = [self.cop1.alpha_start,self.arc2.alpha_end]
+        self.primitives = {"cop1":self.cop1,"arc1":self.arc1,"cop2":self.cop2,"arc2":self.arc2}
+    
+
+    
+class Coil_air_bridges( Complex_Base ):
+    def __init__( self, Z0, start, L1, r, L2, N_air_bridges, trans_in=None ):
+        self.Z0 = Z0
+        self.L1 = L1
+        self.r = r
+        self.L2 = L2
+        self.N_air_bridges = N_air_bridges
+        super().__init__( start, trans_in )
+        self.start = self.connections[0]
+        self.end = self.connections[-1]
+        self.dr = self.end - self.start
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+        
+    def init_primitives( self ):
+            self.cop1 = Air_bridges(self.N_air_bridges, self.Z0.width, self.Z0.gap, DPoint(0,0), DPoint( self.L1,0 ) )
+            self.arc1 = Air_bridges_arc( self.Z0, self.cop1.end, -self.r, -pi )
+            self.cop2 = Air_bridges(self.N_air_bridges, self.Z0.width, self.Z0.gap, self.arc1.end, self.arc1.end - DPoint( self.L2,0 ))
+            self.arc2 = Air_bridges_arc( self.Z0, self.cop2.end, -self.r, pi )
+            
+            self.connections = [self.cop1.start,self.arc2.end]
+            self.angle_connections = [self.cop1.alpha_start,self.arc2.alpha_end]
+            self.primitives = {"cop1":self.cop1,"arc1":self.arc1,"cop2":self.cop2,"arc2":self.arc2}
+            
+            
+            
+            
+class Coil_air_bridges_type_2( Complex_Base ):
+# Contraru to Coil_air_bridges, this one only places the air bridges in the straight lines, we place nothing on 
+# the turns of the coil.
+    def __init__( self, Z0, start, L1, r, L2, N_air_bridges, trans_in=None ):
+        self.Z0 = Z0
+        self.L1 = L1
+        self.r = r
+        self.L2 = L2
+        self.N_air_bridges = N_air_bridges
+        super().__init__( start, trans_in )
+        self.start = self.connections[0]
+        self.end = self.connections[-1]
+        self.dr = self.end - self.start
+        self.alpha_start = self.angle_connections[0]
+        self.alpha_end = self.angle_connections[1]
+        
+    def init_primitives( self ):
+            self.cop1 = Air_bridges(self.N_air_bridges, self.Z0.width, self.Z0.gap, DPoint(0,0), DPoint( self.L1,0 ) )
+            self.cop2 = Air_bridges(self.N_air_bridges, self.Z0.width, self.Z0.gap, self.arc1.end, self.arc1.end - DPoint( self.L2,0 ))
+            
+            self.connections = [self.cop1.start,self.arc2.end]
+            self.angle_connections = [self.cop1.alpha_start,self.arc2.alpha_end]
+            self.primitives = {"cop1":self.cop1,"arc1":self.arc1,"cop2":self.cop2,"arc2":self.arc2}
+            
+            
             
             
 from collections import Counter

@@ -1,7 +1,7 @@
-import pya
+import klayout.db
 from math import sqrt, cos, sin, atan2, pi, copysign
-from pya import Point,DPoint,DSimplePolygon,SimplePolygon, DPolygon, Polygon, Region, Vector, DVector
-from pya import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
+from klayout.db import Point,DPoint,DSimplePolygon,SimplePolygon, DPolygon, Polygon, Region, Vector, DVector
+from klayout.db import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
 
 from ClassLib.BaseClasses import Complex_Base
 from ClassLib.Shapes import *

@@ -1,5 +1,5 @@
-import pya
-from pya import Region
+import klayout.db
+from klayout.db import Region
 from ClassLib import PROGRAM
 
 from collections import OrderedDict
@@ -13,7 +13,7 @@ class Chip_Design:
     """
     def __init__(self, cell_name):
         # getting main references of the application
-        app = pya.Application.instance()
+        app = klayout.db.Application.instance()
         mw = app.main_window()
         self.lv = mw.current_view()
         self.cv = None
@@ -36,8 +36,8 @@ class Chip_Design:
         else:
             self.cell = layout.create_cell(cell_name)
         
-        info = pya.LayerInfo(1, 0)
-        info2 = pya.LayerInfo(2, 0)
+        info = klayout.db.LayerInfo(1, 0)
+        info2 = klayout.db.LayerInfo(2, 0)
         self.layer_ph = layout.layer(info)  # photoresist layer
         self.layer_el = layout.layer(info2)  # e-beam lithography layer
 
@@ -108,7 +108,7 @@ class Chip_Design:
 
     # Save your design as GDS-II
     def save_as_gds2(self, filename):
-        slo = pya.SaveLayoutOptions()
+        slo = klayout.db.SaveLayoutOptions()
         slo.format = 'GDS2'
         slo.gds2_libname = 'LIB'
         slo.gds2_max_cellname_length = 32000

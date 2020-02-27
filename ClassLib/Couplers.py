@@ -1,7 +1,7 @@
-import pya
+import klayout.db
 from math import sqrt, cos, sin, atan2, pi, copysign
-from pya import Point,DPoint,DSimplePolygon,SimplePolygon, DPolygon, Polygon,  Region
-from pya import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
+from klayout.db import Point,DPoint,DSimplePolygon,SimplePolygon, DPolygon, Polygon,  Region
+from klayout.db import Trans, DTrans, CplxTrans, DCplxTrans, ICplxTrans
 
 from ClassLib.BaseClasses import *
 from ClassLib.Coplanars import *
@@ -162,5 +162,5 @@ class TJunction_112( Element_Base ):
         self.empty2_polygon = DPolygon( [self.P2,self.P9,self.P4,self.P3]  )
         self.empty3_polygon = DPolygon( [self.P5,self.P10,self.P12,self.P6] )
         self.gnd_polygon = DPolygon( [self.P10,self.P11,self.P12] )
-        self.metal_region = pya.Region( list(map(pya.Polygon().from_dpoly,[self.metal_polygon,self.gnd_polygon])) )
-        self.empty_region = pya.Region( list(map(pya.Polygon().from_dpoly ,[self.empty1_polygon,self.empty2_polygon,self.empty3_polygon])) )
+        self.metal_region = klayout.db.Region( list(map(klayout.db.Polygon().from_dpoly,[self.metal_polygon,self.gnd_polygon])) )
+        self.empty_region = klayout.db.Region( list(map(klayout.db.Polygon().from_dpoly ,[self.empty1_polygon,self.empty2_polygon,self.empty3_polygon])) )
