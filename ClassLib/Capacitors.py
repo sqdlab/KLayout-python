@@ -177,8 +177,9 @@ class CWave( Complex_Base ):
 # I (Marcus) think I found a small bug in the large cap class,
 # I corrected it below (where noted).
 class Large_capacitor_mod( Element_Base ):
-    def __init__( self, origin, d_1, d_2, N, gap_2, spacing, trans_in = None ):
-        
+    def __init__( self, origin, d_1, d_2, N, gap_2, spacing, gap_3, trans_in = None, fingers_same = False ):
+        print("Large_capacitor_mod class has been deprecated - consider using Capacitor_Interdigitated")
+
         # origin corresponds to the middle of the bottom pad
         self.origin = origin
         # Width of the capacitor
@@ -189,6 +190,9 @@ class Large_capacitor_mod( Element_Base ):
         self.N = N 
         self.gap_2 = gap_2
         self.spacing = spacing
+        
+        # the gap between pad and each finger tip is hard coded to be 1 um, Eric added a new argument for this gap
+        self.gap_3 = gap_3 
         
         super().__init__(self.origin, trans_in)
     
@@ -209,14 +213,14 @@ class Large_capacitor_mod( Element_Base ):
             self.metal_region.insert( klayout.db.Box().from_dbox(self.metal1) ) 
             
             self.p4 = DPoint(i*(2*self.d_1+2*self.spacing) + self.d_1 + self.spacing -self.d/2, 6e3)
-            self.p5 = DPoint(i*(2*self.d_1+2*self.spacing) + 2*self.d_1 +self.spacing -self.d/2, 5e3+self.d_2+1e3)
+            self.p5 = DPoint(i*(2*self.d_1+2*self.spacing) + 2*self.d_1 +self.spacing -self.d/2, 5e3+self.d_2 + self.gap_3)
             self.metal2 = klayout.db.DBox( self.p4, self.p5)
             self.metal_region.insert( klayout.db.Box().from_dbox(self.metal2) )
             
-            self.empty0 = klayout.db.DBox( self.p3, self.p3 + DPoint(-self.d_1, 1e3))
-            self.empty1 = klayout.db.DBox( self.p3 + DPoint(0,1e3), self.p4 + DPoint(0, -1e3))
-            self.empty2 = klayout.db.DBox( self.p4 + DPoint(0,-1e3), self.p4 + DPoint(self.d_1, 0))
-            self.empty3 = klayout.db.DBox( self.p4 + DPoint(self.d_1,-1e3), self.p5 + DPoint(self.spacing, 0))
+            self.empty0 = klayout.db.DBox( self.p3, self.p3 + DPoint(-self.d_1, self.gap_3))
+            self.empty1 = klayout.db.DBox( self.p3 + DPoint(0,self.gap_3), self.p4 + DPoint(0, -self.gap_3))
+            self.empty2 = klayout.db.DBox( self.p4 + DPoint(0,-self.gap_3), self.p4 + DPoint(self.d_1, 0))
+            self.empty3 = klayout.db.DBox( self.p4 + DPoint(self.d_1,-self.gap_3), self.p5 + DPoint(self.spacing, 0))
             self.empty_region.insert( klayout.db.Box().from_dbox(self.empty0) )
             self.empty_region.insert( klayout.db.Box().from_dbox(self.empty1) )
             self.empty_region.insert( klayout.db.Box().from_dbox(self.empty2) )
@@ -249,14 +253,15 @@ class Large_capacitor_mod( Element_Base ):
        
         # gap at top of last finger:
         self.p12 = DPoint(self.d/2-self.d_1, self.d_2 + 5e3)
-        self.p13 = DPoint(self.d/2, self.d_2 + 6e3)
+        self.p13 = DPoint(self.d/2, self.d_2 + 5e3 +self.gap_3)
         self.empty6 = klayout.db.DBox(self.p12, self.p13 )
         self.empty_region.insert( klayout.db.Box().from_dbox(self.empty6) ) 
         
 
 class Large_capacitor( Element_Base ):
     def __init__( self, origin, d_1, d_2, N, gap_2, spacing, trans_in = None ):
-        
+        print("Large_capacitor class has been deprecated - consider using Capacitor_Interdigitated")
+
         # origin corresponds to the middle of the bottom pad
         self.origin = origin
         # Width of the capacitor
@@ -331,7 +336,9 @@ class Large_capacitor( Element_Base ):
         
         
 class Connector_large_capacitor( Complex_Base ):
-    def __init__( self, origin, width, L_sep, gap_1, gap_2, spacing, d_1, d_2, N, trans_in = None ):
+    def __init__( self, origin, width, L_sep, gap_1, gap_2, spacing, d_1, d_2, N, gap_3, trans_in = None ):
+        print("Connector_large_capacitor class has been deprecated - consider using the cpw_params attribute in Capacitor_Interdigitated")
+        
         # origin corresponds to the middle of the bottom pad
         self.origin = origin
         # Width of the capacitor
@@ -351,6 +358,9 @@ class Connector_large_capacitor( Complex_Base ):
         # Distance between transmission line and capacitor
         self.L_sep = L_sep
         self.d = (self.N -1)*(2*self.spacing + 2*self.d_1) + self.d_1
+        
+        #the gap between pad and each finger tip is hard coded to be 1 um, Eric add a new argument for this gap
+        self.gap_3 = gap_3
 
         super().__init__( origin, trans_in )
 
@@ -379,10 +389,11 @@ class Connector_large_capacitor( Complex_Base ):
         self.capa_connex_1 = CPW( self.d, self.gap_2, self.p2, self.p3)
         self.primitives["capa_connex_1"] = self.capa_connex_1
         
-        self.joint_1 = CPW2CPW( self.transmission_connection_1, self.capa_connex_1, self.transmission_connection_1.end, self.capa_connex_1.start)
+        self.joint_1 = CPW2CPW( self.transmission_connection_1, self.capa_connex_1,
+                                 self.transmission_connection_1.end, self.capa_connex_1.start)
         self.primitives["joint_1"] = self.joint_1
         
-        self.capa = Large_capacitor(self.p3, self.d_1, self.d_2, self.N, self.gap_2, self.spacing)
+        self.capa = Large_capacitor_mod(self.p3, self.d_1, self.d_2, self.N, self.gap_2, self.spacing, self.gap_3)
         self.primitives["capa"] = self.capa
         
         self.capa_connex_2 = CPW( self.d, self.gap_2, self.p4, self.p5)
@@ -391,8 +402,141 @@ class Connector_large_capacitor( Complex_Base ):
         self.transmission_connection_2 = CPW( self.width, self.gap_1, self.p6, self.p7)
         self.primitives["transmission_connection_2"] = self.transmission_connection_2
         
-        self.joint_2 = CPW2CPW(self.capa_connex_2, self.transmission_connection_2, self.capa_connex_2.end, self.transmission_connection_2.start)
+        self.joint_2 = CPW2CPW(self.capa_connex_2, self.transmission_connection_2, 
+                                self.capa_connex_2.end, self.transmission_connection_2.start)
         self.primitives["joint_2"] = self.joint_2
         
         self.connections = [self.p7, self.p0]
-        self.angle_connections = [0,self.transmission_connection_2.alpha_end] 
+        self.angle_connections = [0,self.transmission_connection_2.alpha_end]
+
+
+class Capacitor_Interdigitated( Element_Base ):
+    def __init__( self, origin, fing_wid, fing_gap, fing_len, inter_dig_gap, pad_width, side_gap, N, fing_config = 'diff_N_start', trans_in = None ):
+        '''
+        Draws an interdigitated capacitor in which the first pad (thus, the origin) is in the bottom and the second pad is on the top. The fingers thus extend vertically.
+        Thus, if using trans_in with an integer rotation, 3 orients the capacitor left-to-right horizontally.
+
+        The cpw_params attribute can be used to get the CPW parameters (e.g. width and gap) required to join the capacitor into another CPW object.
+
+        Inputs: 
+            - origin - Origin corresponds to the middle of the bottom pad
+            - fing_wid - Width of the a finger
+            - fing_gap - Gap between adjacent fingers
+            - fing_len - Length of the fingers (from their associated pads)
+            - inter_dig_gap - Gap between a given finger and the opposite pad
+            - pad_width - Capacitor pad widths (that is, the padding on the top and bottom of the capacitors that sandwich the fingers)
+            - side_gap - Empty space to pad the left and right hand sides of the capacitor
+            - N - Number of fingers per side of capacitor
+            - fing_config - The arrangement of the fingers:
+                                - diff_N_start - There are N-1 fingers on the end-pad slot into the N fingers on the starting pad
+                                - diff_N_end   - There are N-1 fingers on the start-pad slot into the N fingers on the ending pad
+                                - same_N_left  - There are N fingers on both pads with the left-most finger being from the bottom pad
+                                - same_N_right - There are N fingers on both pads with the left-most finger being from the top pad
+            - trans_in - Klayout transformation - e.g. klayout.db.Trans(0, False, 0, 0)
+        '''    
+        # origin corresponds to the middle of the bottom pad
+        self.origin = origin
+        self.fing_wid = fing_wid
+        self.fing_gap = fing_gap
+        self.fing_len = fing_len
+        self.inter_dig_gap = inter_dig_gap
+        self.side_gap = side_gap
+        self.pad_width = pad_width
+        self.N = N
+        self.fing_config = fing_config
+        self.start = self.origin
+        super().__init__(self.origin, trans_in)
+        self.start = self.connections[0]
+        self.end = self.connections[1]
+    
+    def init_regions( self ):
+        odd_config = self.fing_config == 'diff_N_start' or self.fing_config == 'diff_N_end'
+        if odd_config:
+            cap_wid = 2*(self.N-1)*(self.fing_gap + self.fing_wid) + self.fing_wid
+        else:
+            cap_wid = 2*self.N*(self.fing_gap + self.fing_wid) - self.fing_gap
+        
+        yUpper = self.pad_width + self.fing_len + self.inter_dig_gap
+
+        #Bottom Pad
+        self.metal_region.insert(klayout.db.DBox( DPoint(-cap_wid/2,0), DPoint(cap_wid/2,self.pad_width) ))
+        #Top Pad
+        self.metal_region.insert(klayout.db.DBox( DPoint(-cap_wid/2,yUpper), DPoint(cap_wid/2,yUpper + self.pad_width) ))
+        
+        self.connections = [DPoint(0,0),DPoint(0, yUpper + self.pad_width)]
+        self.cpw_params = CPWParameters(cap_wid, self.side_gap)
+        
+        #Write the unit cells:
+        #                   __________y2
+        #   p3  p6OO     p8
+        #   .     OO      .
+        #p2 .     OOp5    .
+        #  OO     ..      OO
+        #  OO     ..      OO
+        #  OOp1  p4 p7    OO__________y1
+        #
+        unit_cell_wid = 2*(self.fing_wid+self.fing_gap)
+        if self.fing_config == 'diff_N_start' or self.fing_config == 'same_N_left':
+            y1 = self.pad_width
+            y2 = yUpper
+            cy1 = y1 + self.fing_len        #y-value of first finger's edge
+            cy2 = y1 + self.inter_dig_gap   #y-value of second finger's edge
+        else:
+            y1 = yUpper
+            y2 = self.pad_width
+            cy1 = y1 - self.fing_len
+            cy2 = y1 - self.inter_dig_gap
+        for i in range(self.N):
+            p1 = DPoint(i*unit_cell_wid - cap_wid/2 + self.fing_wid, y1)
+            p2 = DPoint(i*unit_cell_wid - cap_wid/2, cy1)
+            p3 = DPoint(p1.x, y2)
+            p4 = p1 + DPoint(self.fing_gap,0)
+            p5 = DPoint(p4.x + self.fing_wid,cy2)
+            p6 = DPoint(p4.x, p3.y)
+            p7 = DPoint(p5.x, p4.y)
+            p8 = DPoint(p7.x + self.fing_gap, p6.y)
+
+            #First finger of unit-cell
+            self.metal_region.insert(klayout.db.Box().from_dbox(klayout.db.DBox( p1, p2 )))
+            self.empty_region.insert(klayout.db.Box().from_dbox(klayout.db.DBox( p2, p3 )))
+            self.empty_region.insert(klayout.db.Box().from_dbox(klayout.db.DBox( p1, p6 )))
+            #Second finger of unit-cell
+            if not odd_config or i < self.N-1:
+                self.metal_region.insert(klayout.db.Box().from_dbox(klayout.db.DBox( p5, p6 )))
+                self.empty_region.insert(klayout.db.Box().from_dbox(klayout.db.DBox( p4, p5 )))
+                if i < self.N-1:    #Don't need empty region on final finger...
+                    self.empty_region.insert(klayout.db.Box().from_dbox(klayout.db.DBox( p7, p8 )))
+
+        #Padding on left and right hand sides
+        self.empty_region.insert(klayout.db.DBox( DPoint(-cap_wid/2-self.side_gap,0), DPoint(-cap_wid/2,yUpper+self.pad_width) ))
+        self.empty_region.insert(klayout.db.DBox( DPoint(cap_wid/2+self.side_gap,0), DPoint(cap_wid/2,yUpper+self.pad_width) ))
+
+class Capacitor_GapCPW( Element_Base ):
+    def __init__( self, origin, cpw_params, gap_size, trans_in = None ):
+        '''
+        Draws a gap-capacitor in which the first pad (thus, the origin) is in the bottom and the second pad is on the top. The gap is a CPW with no central conductor.
+        Thus, if using trans_in with an integer rotation, 3 orients the capacitor left-to-right horizontally.
+
+        The cpw_params attribute can be used to get the CPW parameters (e.g. width and gap) required to join the capacitor into another CPW object.
+
+        Inputs: 
+            - origin - Origin corresponds to the middle of the bottom pad
+            - cpw_params - CPW or CPWParameters holding the parameters to inherit width and side-gap
+            - gap_size - actual size of gap across the transmission line (forming the capacitor)
+            - trans_in - Klayout transformation - e.g. klayout.db.Trans(0, False, 0, 0)
+        '''    
+        # origin corresponds to the middle of the bottom pad
+        self.origin = origin
+        self.cpw_params = CPWParameters(cpw_params.width, cpw_params.gap)
+        self.gap_size = gap_size
+        self.start = self.origin
+        super().__init__(self.origin, trans_in)
+        self.start = self.connections[0]
+        self.end = self.connections[1]
+    
+    def init_regions( self ):
+        half_width = self.cpw_params.width*0.5 + self.cpw_params.gap
+        self.empty_region.insert(klayout.db.DBox( DPoint(-half_width,0), DPoint(half_width,self.gap_size) ))
+        self.connections = [DPoint(0,0),DPoint(0, self.gap_size)]
+
+        

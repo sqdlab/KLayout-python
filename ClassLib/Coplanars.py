@@ -12,13 +12,25 @@ class CPWParameters:
     self.b = 2*gap + width
 
 class CPW( Element_Base ):
-    """@brief: class represents single coplanar waveguide
-        @params:  float width - represents width of the central conductor
-                        float gap - spacing between central conductor and ground planes
-                        float gndWidth - width of ground plane to be drawed 
-                        DPoint start - center aligned point, determines the start point of the coplanar segment
-                        DPoint end - center aligned point, determines the end point of the coplanar segment
-    """
+    '''
+    Base class representing a single coplanar waveguide
+
+    Parameters:
+        width: float
+            Width of the internal conductor. If None, it will use CPWParameters.width
+        gap: float
+            Gap between the internal conductor and the ground planes. If None, it will use CPWParameters.width
+        start: DPoint
+            Center aligned point, determines the start point of the coplanar segment
+        stop: DPoint
+            Center aligned point, determines the end point of the coplanar segment
+        gndWidth: float
+            Width of ground plane to be drawn
+        trans_in:
+            Klayout transformation to be made
+        cpw_params: CPWParameters 
+            Base CPWParameters you can inherit from. If None, it will use width and gap.
+    '''
     def __init__(self, width=None, gap=None, start=DPoint(0,0), end=DPoint(0,0), gndWidth=-1, trans_in=None, cpw_params=None ):
         if( cpw_params  is None ):
             self.width = width
@@ -62,13 +74,27 @@ class CPW( Element_Base ):
         
         
 class Air_bridges( Element_Base ):
-    """@brief: class represents single coplanar waveguide
-        @params:  float width - represents width of the central conductor
-                        float gap - spacing between central conductor and ground planes
-                        float gndWidth - width of ground plane to be drawed 
-                        DPoint start - center aligned point, determines the start point of the coplanar segment
-                        DPoint end - center aligned point, determines the end point of the coplanar segment
-    """
+    '''
+    Base class representing airbridges
+
+    Parameters:
+        N_air_bridges: float
+            Number of airbridges to be drawn
+        width: float
+            Width of the internal conductor. If None, it will use CPWParameters.width
+        gap: float
+            Gap between the internal conductor and the ground planes. If None, it will use CPWParameters.width
+        start: DPoint
+            Center aligned point, determines the start point of the coplanar segment
+        stop: DPoint
+            Center aligned point, determines the end point of the coplanar segment
+        gndWidth: float
+            Width of ground plane to be drawn
+        trans_in:
+            Klayout transformation to be made
+        cpw_params: CPWParameters 
+            Base CPWParameters you can inherit from. If None, it will use width and gap.
+    '''
     def __init__(self,  N_air_bridges, width=None, gap=None, start=DPoint(0,0), end=DPoint(0,0), gndWidth=-1, trans_in=None, cpw_params=None ):
         if( cpw_params  is None ):
             self.width = width
@@ -113,6 +139,23 @@ class Air_bridges( Element_Base ):
 
 
 class CPW_arc( Element_Base ):
+    '''
+    Base class representing a single coplanar waveguide arc
+
+    Parameters:
+        Z0: CPW or CPWParameters
+            Parameters to inherit width and gap from
+        start: DPoint
+            Center aligned point, determines the start point of the coplanar segment
+        R: float
+            Radius of the arc
+        delta_alpha: float
+            Angle of the arc
+        gndWidth: float
+            Width of the ground to be drawn
+        trans_in: Transformation
+            KLayout transformation to be processed during execution
+    '''
     def __init__(self, Z0, start, R, delta_alpha, gndWidth = -1, trans_in=None ):
         self.R = R
         self.start = start
@@ -342,6 +385,21 @@ class Air_bridges_arc( Element_Base ):
         
         
 class CPW2CPW( Element_Base ):
+    '''
+    Base class representing a smooth connection between two coplanar waveguides.
+
+    Parameters:
+        Z0: CPW or CPWParameters
+            First CPW parameters
+        Z1: CPW or CPWParameters
+            Second CPW parameters
+        start: DPoint
+            Center aligned point, determines the start point of the coplanar segment
+        end: Dpoint
+            Center aligned point, determines the end point of the coplanar segment
+        trans_in: Transformation
+            Klayout transformation to be executed
+    '''
     def __init__(self, Z0, Z1, start, end, trans_in = None):
         self.Z0 = Z0
         self.Z1 = Z1
@@ -689,6 +747,113 @@ class CPW_RL_Path(Complex_Base):
     def get_total_length(self):
         return sum(self._segment_lengths) + \
             sum([abs(R*alpha) for R, alpha in zip(self._turn_radiuses, self._turn_angles)])
+
+class CPW_Meander_Resonator( Element_Base ):
+    def __init__(self, Z0, start, full_length, R, max_meander_width, trans_in=None ):
+        '''
+        Draws a meandering resonator. The number of turns taken is determined by the supplied turn radius,
+        and total length. Note that the default behaviour is to render the resonator left-to-right.
+
+        The attribute self.connections gives the coordinates of the central path - useful when importing
+        coordinates to help guide the meshing algorithm in FEA.
+
+        Inputs:
+            - Z0 - CPW or CPWParameters holding the parameters to inherit width and gap from
+            - start -  DPoint for the start point of the coplanar segment
+            - full_length - Total length (along the centre of the track) of entire meander
+            - R - Radii to use on the meandering arcs
+            - max_meander_width - Maximum meander width (centre-to-centre)
+            - trans_in: KLayout transformation to be processed during execution
+        '''
+        self.R = R
+        self.width = Z0.width
+        self.gap = Z0.gap
+        
+        #Calculate the meander parameters
+        N0 = 0.5 * (full_length - (np.pi-2)*R) / (max_meander_width-2*R + np.pi*R)
+        self.N = int(N0)
+        self.inner_len = 0.5 * (full_length - (np.pi-2)*R) / self.N - np.pi*R
+        
+        super().__init__( start, trans_in )
+        self.start = self.connections[0]
+        self.end = self.connections[-1]
+
+    def _get_solid_arc( self, center, R, width, alpha_start, alpha_end, n_inner, n_outer ):
+        pts = []
+
+        n_inner = int(n_inner)
+        n_outer = int(n_outer)
+
+        if alpha_end > alpha_start:
+            alpha_start = alpha_start
+            alpha_end = alpha_end
+        else:
+            alpha_start = alpha_start
+            alpha_end = alpha_end
+        
+        d_alpha_inner = (alpha_end - alpha_start)/(n_inner - 1)
+        d_alpha_outer = -d_alpha_inner
+        
+        path_pts = []
+
+        for i in range(0, n_inner):
+            alpha = alpha_start + d_alpha_inner*i
+            pts.append(center + DPoint(cos(alpha), sin(alpha))*(R - width*0.5))
+            path_pts.append(center + DPoint(cos(alpha), sin(alpha))*R)
+        for i in range(0, n_outer):
+            alpha = alpha_end + d_alpha_outer*i
+            pts.append(center + DPoint(cos(alpha), sin(alpha))*(R + width*0.5))
+        return (path_pts,DSimplePolygon(pts))
+        
+    def _place_arc(self, center, R, alpha_start, alpha_end, num_segments = 200):
+        n_inner = num_segments
+        n_outer = num_segments
+
+        connpts,metal_arc = self._get_solid_arc(center, R, self.width, 
+                    alpha_start - pi/2, alpha_end - pi/2, n_inner, n_outer)
+        _,empty_arc1 = self._get_solid_arc(center, R - (self.width + self.gap)*0.5, 
+                    self.gap, alpha_start - pi/2, alpha_end - pi/2, n_inner, n_outer)  
+        _,empty_arc2 = self._get_solid_arc(center, R + (self.width + self.gap)*0.5, 
+                    self.gap, alpha_start - pi/2, alpha_end - pi/2, n_inner, n_outer)  
+        self.metal_region.insert(SimplePolygon().from_dpoly(metal_arc))
+        self.empty_region.insert(SimplePolygon().from_dpoly(empty_arc1))
+        self.empty_region.insert(SimplePolygon().from_dpoly(empty_arc2))
+        return connpts
+
+    def _place_straight(self, pt1, pt2):
+        h = DPoint(self.width*0.5,0)
+        g = DPoint(self.width*0.5+self.gap,0)
+        self.metal_region.insert(klayout.db.Box().from_dbox(klayout.db.DBox( pt1-h, pt2+h )))
+        self.empty_region.insert(klayout.db.Box().from_dbox(klayout.db.DBox( pt1-h, pt2-g )))
+        self.empty_region.insert(klayout.db.Box().from_dbox(klayout.db.DBox( pt1+h, pt2+g )))
+
+    def init_regions(self):
+        num_segments_half = 25
+
+        #Initial right arc
+        p1 = DPoint(0, -self.R)
+        self.connections = self._place_arc(p1, -self.R, 0, -np.pi/2, num_segments_half/2)
+        #Perform the meanders
+        p1 = DPoint(self.R, -self.R)
+        p2 = p1-DPoint(0,self.inner_len/2-self.R)
+        self._place_straight(p1, p2)
+        for n in range(self.N):
+            p1 = p2 + DPoint(self.R, 0)
+            self.connections += self._place_arc(p1, -self.R, np.pi/2, np.pi*3/2, num_segments_half)
+            p1 = p1 + DPoint(self.R, 0)
+            p2 = p1 + DPoint(0, self.inner_len)
+            self._place_straight(p1, p2)        #Don't need points for path as the arcs will take care of this...
+            p1 = p2 + DPoint(self.R, 0)
+            self.connections += self._place_arc(p1, self.R, np.pi*3/2, np.pi/2, num_segments_half)
+            p1 = p1 + DPoint(self.R, 0)
+            if (n < self.N-1):
+                p2 = p1 - DPoint(0, self.inner_len)
+            else:
+                p2 = p1 - DPoint(0, self.inner_len/2-self.R)
+            self._place_straight(p1, p2)
+        #Final left arc
+        p1 = p2+DPoint(self.R,0)
+        self.connections += self._place_arc(p1, self.R, -np.pi/2, 0, num_segments_half/2)
 
 
             
