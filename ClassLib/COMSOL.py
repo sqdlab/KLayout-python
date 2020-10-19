@@ -3,6 +3,11 @@ import jpype.types as jtypes
 import klayout.db as db
 import numpy as np
 
+import matplotlib.pyplot as plt
+from matplotlib.collections import PolyCollection
+import matplotlib as mpl
+
+
 class COMSOL_Model:
     def __init__(self, model_name, num_cores = 2):
         self._engine = mph.Client(cores=num_cores)
@@ -29,6 +34,7 @@ class COMSOL_Model:
 
         self._ports = []
         self._conds = []
+        self._conds_coords = []
         self._fine_mesh = []
         self._num_sel = 0
 
@@ -100,6 +106,7 @@ class COMSOL_Model:
             sel_x, sel_y, sel_r = self._create_poly(pol_name, cur_poly)
             #Get the selection point - any point inside the polygon...
             self._conds += [self._create_boundary_selection_sphere(sel_r, sel_x, sel_y)]
+            self._conds_coords += [np.array(cur_poly)]
 
     def create_port_on_CPW(self, CPW_obj, is_start=True, len_launch = 20e-6):
         '''
@@ -247,7 +254,7 @@ class COMSOL_Model:
             self._model.java.sol('solRFsparams').runAll()
         
         self._model.java.result().numerical().create("ev1", "Eval")
-        self._model.java.result().numerical("ev1").set("data", "dset1")
+        self._model.java.result().numerical("ev1").set("data", self._dset_sParams)
         self._model.java.result().numerical("ev1").set("expr", "freq")
         freqs = self._model.java.result().numerical("ev1").getData()
         self._model.java.result().numerical("ev1").set("expr", "emw.S11dB")
@@ -264,6 +271,9 @@ class COMSOL_Model:
         return np.vstack([freqs,s11s,s21s])
         
     def run_simulation_capMat(self):
+        '''
+        Runs the simulation and returns a capacitance matrix.
+        '''
         num_ports = len(self._conds)
         capMatFull = np.zeros([num_ports,num_ports])
         
@@ -283,6 +293,26 @@ class COMSOL_Model:
         
         self._model.java.result().numerical().remove("gmev1")
         return capMatFull
+
+    def display_conductor_indices(self):
+        '''
+        Plots a coloured visualisation of the metallic conductors and their corresponding row/column indices of the capacitance matrix.
+        '''
+        fig, ax = plt.subplots()
+        fig.set_size_inches(10,10)
+        colMap = mpl.cm.jet
+        numConds = len(self._conds_coords)
+        colMap = plt.get_cmap('jet', numConds)
+        #Add metallic conductors as discrete colours
+        coll = PolyCollection(self._conds_coords, array=np.arange(numConds)+1,cmap=colMap, edgecolors='none')
+        ax.add_collection(coll)
+        #Ensure uniform scale
+        ax.autoscale_view()
+        ax.set_aspect('equal', 'box')
+        #Add a custom colorbar to show the colour key
+        cax = fig.colorbar(coll, ticks=1+(np.arange(0,numConds)+0.5)*(numConds-1)/numConds, ax=ax)
+        cax.ax.set_yticklabels(np.arange(0,numConds)+1)  # vertically oriented colorbar
+
 
     def save(self, file_name):
         self._model.save(file_name)
