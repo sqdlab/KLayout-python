@@ -35,17 +35,37 @@ class COMSOL_Model:
         self._model.java.component().create("comp1", True)
 
         self._model.java.component("comp1").geom().create("geom1", 3)
-        self._model.java.component("comp1").mesh().create("mesh1")
+        self._model.java.component("comp1").mesh().create("mesh1")        
 
+        #Create physics and study for RF analysis (e.g. s-parameters)
         self._model.java.component("comp1").physics().create("emw", "ElectromagneticWaves", "geom1")
-
         self._model.java.study().create("std1")
         self._model.java.study("std1").create("freq", "Frequency")
         self._model.java.study("std1").feature("freq").set("solnum", "auto")
         self._model.java.study("std1").feature("freq").set("notsolnum", "auto")
         self._model.java.study("std1").feature("freq").set("savesolsref", jtypes.JBoolean(False))
         self._model.java.study("std1").feature("freq").set("ngen", "5")
+        self._model.java.sol().create('solRFsparams')
+        self._model.java.sol('solRFsparams').createAutoSequence('std1') 
+
+        #Create physics and study for electrostatics (e.g. generating capacitance matrices)
+        self._model.java.component("comp1").physics().create("es", "Electrostatics", "geom1")
+        self._model.java.component("comp1").physics("es").prop("PortSweepSettings").set("useSweep", jtypes.JBoolean(True))
+        self._model.java.param().set("PortName", jtypes.JInt(1))    #Just use default port name...
+        self._model.java.study().create("stdCapMat")
+        self._model.java.study("stdCapMat").create("capMat","Stationary")
+        self._model.java.sol().create('solCapMat')
+        self._model.java.sol('solCapMat').createAutoSequence('stdCapMat')
+
+        #N.B. The ordering of the datasets here indicates that s-parameters live in dset1 while capMat lives in dset2.
+        self._dset_sParams = "dset1"
+        self._dset_capMat = "dset2"
+
+        #Activate the appropriate physics (to be solved) for the given studies
         self._model.java.study("std1").feature("freq").activate("emw", jtypes.JBoolean(True))
+        self._model.java.study("stdCapMat").feature("capMat").activate("emw", jtypes.JBoolean(False))
+        self._model.java.study("std1").feature("freq").activate("es", jtypes.JBoolean(False))
+        self._model.java.study("stdCapMat").feature("capMat").activate("es", jtypes.JBoolean(True))
 
         #Create the main bounding area
         self._model.java.component("comp1").geom("geom1").lengthUnit("m")
@@ -56,7 +76,7 @@ class COMSOL_Model:
         self._model.java.component("comp1").geom("geom1").feature().create("wp1", "WorkPlane")
         self._model.java.component("comp1").geom("geom1").feature("wp1").set("unite", jtypes.JBoolean(True)) #Unite all objects...
 
-        self._model.java.component("comp1").geom("geom1").run()
+        # self._model.java.component("comp1").geom("geom1").run()
 
     def add_metallic_Klayout(self, kLayoutObj, layer_id, **kwargs):
         '''
@@ -160,7 +180,14 @@ class COMSOL_Model:
         cond_bounds = [self._get_selection_boundaries(x)[0] for x in self._conds]
         self._model.java.component("comp1").physics("emw").create("pec2", "PerfectElectricConductor", 2)
         self._model.java.component("comp1").physics("emw").feature("pec2").selection().set(jtypes.JArray(jtypes.JInt)(cond_bounds))
-        #Create the ports
+        #Create terminals for capacitance matrix simulations
+        for cur_term in range(len(cond_bounds)):
+            term_name = "term"+str(cur_term)
+            self._model.java.component("comp1").physics("es").create(term_name, "Terminal", 2)
+            self._model.java.component("comp1").physics("es").feature(term_name).selection().set(jtypes.JArray(jtypes.JInt)([cond_bounds[cur_term]]))
+            self._model.java.component("comp1").physics("es").feature(term_name).set("TerminalType", "Voltage")
+            self._model.java.component("comp1").physics("es").feature(term_name).set("TerminalName", jtypes.JInt(cur_term+1))
+        #Create the excitation ports for RF simulations
         for cur_port_id,cur_port in enumerate(self._ports):
             port_name = "lport" + str(cur_port_id)
             self._model.java.component("comp1").physics("emw").create(port_name, "LumpedPort", 2)
@@ -172,7 +199,7 @@ class COMSOL_Model:
             self._model.java.component("comp1").physics("emw").feature(port_name).feature('ue2').selection().set(jtypes.JArray(jtypes.JInt)(port_bndsB))
             self._model.java.component("comp1").physics("emw").feature(port_name).feature('ue1').set('ahUniformElement', jtypes.JArray(jtypes.JDouble)([cur_port[2].x,cur_port[2].y,0.0]))
             self._model.java.component("comp1").physics("emw").feature(port_name).feature('ue2').set('ahUniformElement', jtypes.JArray(jtypes.JDouble)([-cur_port[2].x,-cur_port[2].y,0.0]))
-        
+
         #Create mesh
         for mesh_ind, cur_fine_struct in enumerate(self._fine_mesh):
             cur_polys = self._get_selection_boundaries(cur_fine_struct[0])
@@ -209,14 +236,53 @@ class COMSOL_Model:
         else:
             self._model.java.study("std1").feature("freq").set("preusesol", "no")
         
-    def run_simulation(self):
-        self._model.java.study('std1').run()
+    def run_simulation_sparams(self, recompute=True):
+        '''
+        Run simulation to get s-parameters after running the simulation. Returns a 3-row array in which the rows are: frequency values, S11s, S21s.
+        
+        Inputs:
+            - recompute - (Default True) If true, the solution result is recomputed
+        '''
+        if (recompute):
+            self._model.java.sol('solRFsparams').runAll()
+        
+        self._model.java.result().numerical().create("ev1", "Eval")
+        self._model.java.result().numerical("ev1").set("data", "dset1")
+        self._model.java.result().numerical("ev1").set("expr", "freq")
+        freqs = self._model.java.result().numerical("ev1").getData()
+        self._model.java.result().numerical("ev1").set("expr", "emw.S11dB")
+        s11s = self._model.java.result().numerical("ev1").getData()
+        self._model.java.result().numerical("ev1").set("expr", "emw.S21dB")
+        s21s = self._model.java.result().numerical("ev1").getData()
+        self._model.java.result().numerical().remove("ev1")
 
-    def get_sparams(self):
-        '''
-        Get s-parameters after running the simulation. Returns a 3-row array in which the rows are: frequency values, S11s, S21s.
-        '''
-        return np.vstack([self._model.evaluate(['freq']),self._model.evaluate(['emw.S11dB']),self._model.evaluate(['emw.S21dB'])])
+        #For some reason the returned arrays are rows of the same data apparently repeated across the columns...
+        freqs = np.array(freqs[0])[:,1]
+        s11s = np.array(s11s[0])[:,1]
+        s21s = np.array(s21s[0])[:,1]
+
+        return np.vstack([freqs,s11s,s21s])
+        
+    def run_simulation_capMat(self):
+        num_ports = len(self._conds)
+        capMatFull = np.zeros([num_ports,num_ports])
+        
+        #Setup temporary results dataset 
+        self._model.java.result().numerical().create("gmev1", "EvalGlobalMatrix")
+        self._model.java.result().numerical("gmev1").set("data", self._dset_capMat)
+        self._model.java.result().numerical("gmev1").set("expr", "es.C")
+        
+        for cur_port in range(num_ports):
+            self._model.java.param().set("PortName", jtypes.JInt(cur_port+1))
+            #Evaluate column of capacitance matrix
+            self._model.java.sol('solCapMat').runAll()
+            #Extract column from result
+            capCol = self._model.java.result().numerical("gmev1").computeResult()
+            capCol = np.array(capCol[0])
+            capMatFull[:,cur_port] = capCol[:,cur_port]
+        
+        self._model.java.result().numerical().remove("gmev1")
+        return capMatFull
 
     def save(self, file_name):
         self._model.save(file_name)
